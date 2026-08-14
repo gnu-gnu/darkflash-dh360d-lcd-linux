@@ -70,10 +70,10 @@ Uninstall with `sudo ./uninstall.sh`.
 
 ### Your fan sensors may not exist until you load a module
 
-On this board (ASUS WS X299 SAGE/10G, NCT6796D) the kernel did **not**
-autoload the Super-I/O driver. `/sys/class/hwmon` had `coretemp`, `nvme` and
-`asus` — and not a single `fan*_input` anywhere. There was no way to read the
-pump speed at all.
+On my board (ASUS WS X299 SAGE/10G, NCT6796D) the kernel did **not** autoload
+the Super-I/O driver. `/sys/class/hwmon` had `coretemp`, `nvme` and `asus` —
+and not a single `fan*_input` anywhere. There was no way to read the pump
+speed at all.
 
 ```sh
 sudo modprobe nct6775
@@ -89,11 +89,11 @@ Tempting, and wrong. Under load a radiator fan can spin up past the pump, and
 the display would silently start reporting the wrong thing mid-benchmark.
 `DH360D_FAN` is pinned explicitly for that reason.
 
-Also worth knowing: on this machine the pump is wired to the **CPU_FAN**
+Also worth knowing: in my own build the pump is wired to the **CPU_FAN**
 header, not the pump header, because the pump header made the BIOS complain
-about a missing CPU fan at every boot. So "the pump is on the pump header" is
-not a safe assumption — check with `--list-fans` and look for the steady
-2000–3500 rpm one.
+about a missing CPU fan at every boot. That is my setup, not a general rule —
+but it does mean "the pump is on the pump header" is not a safe assumption.
+Check with `--list-fans` and look for the steady 2000–3500 rpm one.
 
 Since hwmon numbering shifts between boots, the daemon locates the chip by
 name and only pins the fan index.

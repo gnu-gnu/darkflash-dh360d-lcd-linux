@@ -1,0 +1,20 @@
+# Configuration for the dh360d LCD daemon.
+# Apply changes with: sudo systemctl restart dh360d
+
+# Which fan to report as pump RPM.
+#
+# Either an nct67xx fan name (fan1, fan2, ...) or an absolute fan*_input path.
+# Leave unset to report 0.
+#
+# Find yours with:   dh360d-daemon --list-fans
+# The pump is the steady 2000-3500 rpm one. Do not assume it is on the pump
+# header - it may well be wired to CPU_FAN.
+#
+#DH360D_FAN=fan2
+
+# Seconds between frames.
+DH360D_INTERVAL=1.0
+
+# Serial port. Autodetection (/dev/darkflash_lcd, then /dev/ttyACM0) is
+# normally fine.
+#DH360D_PORT=/dev/darkflash_lcd

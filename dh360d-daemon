@@ -1,0 +1,256 @@
+#!/usr/bin/env python3
+"""
+darkFlash DH360D AIO LCD feeder.
+
+The pump-head LCD (USB 1f3a:0008, WCH CDC-ACM) has no sensors of its own and
+never transmits. It is a write-only display: the host must push values to it
+or the screen stays blank. On Windows the vendor utility does this; this
+daemon does it on Linux.
+
+Wire format (reverse engineered, see PROTOCOL.md):
+
+    115200 8N1, one 7-byte frame per second
+
+    74 03 [temp] [cpu] [rpm_hi] [rpm_lo] [ram]
+
+Every field value is transmitted XOR 2. RPM is a 16-bit big-endian field, so
+XOR 2 only affects its low byte. Sending raw values makes the display show
+each number with bit 1 flipped (off by +/-2).
+
+Environment:
+    DH360D_PORT       serial port (default: /dev/darkflash_lcd, then /dev/ttyACM0)
+    DH360D_INTERVAL   seconds between frames (default: 1.0)
+    DH360D_FAN        which fan to read pump RPM from: an nct67xx fan name
+                      such as "fan2", or an absolute fan*_input path.
+                      Unset means "do not report RPM" (sends 0).
+                      Run `dh360d-daemon --list-fans` to find yours.
+"""
+import glob
+import os
+import struct
+import sys
+import time
+
+import serial
+
+PORT = os.environ.get("DH360D_PORT", "/dev/darkflash_lcd")
+FALLBACK_PORT = "/dev/ttyACM0"
+INTERVAL = float(os.environ.get("DH360D_INTERVAL", "1.0"))
+FAN_SETTING = os.environ.get("DH360D_FAN", "").strip()
+
+BAUD = 115200
+HEADER = bytes([0x74, 0x03])
+XOR = 2
+
+
+# ---------------------------------------------------------------------------
+# sensor discovery
+# ---------------------------------------------------------------------------
+
+def _read(path):
+    with open(path) as f:
+        return f.read().strip()
+
+
+def _hwmon_name(path):
+    try:
+        return _read(os.path.join(path, "name"))
+    except OSError:
+        return ""
+
+
+def _find_superio():
+    """Any Nuvoton NCT67xx Super-I/O hwmon (nct6796, nct6775, nct6798, ...)."""
+    for h in sorted(glob.glob("/sys/class/hwmon/hwmon*")):
+        if _hwmon_name(h).startswith("nct67"):
+            return h
+    return None
+
+
+def find_temp_input():
+    """coretemp 'Package id 0', falling back to that chip's first temp input."""
+    for h in sorted(glob.glob("/sys/class/hwmon/hwmon*")):
+        if _hwmon_name(h) != "coretemp":
+            continue
+        for lp in sorted(glob.glob(os.path.join(h, "temp*_label"))):
+            try:
+                if _read(lp) == "Package id 0":
+                    return lp[: -len("_label")] + "_input"
+            except OSError:
+                continue
+        inputs = sorted(glob.glob(os.path.join(h, "temp*_input")))
+        return inputs[0] if inputs else None
+    return None
+
+
+def find_fan_input():
+    """
+    Resolve DH360D_FAN to a fan*_input path.
+
+    Deliberately no "pick the fastest fan" autodetection: under load a
+    radiator fan can outrun the pump, which would silently switch what the
+    display reports. Pin the fan explicitly instead.
+
+    hwmon numbering is not stable across boots, so the chip is located by
+    name and only the fan index is fixed.
+    """
+    if not FAN_SETTING:
+        return None
+    if FAN_SETTING.startswith("/"):
+        return FAN_SETTING if os.path.exists(FAN_SETTING) else None
+    h = _find_superio()
+    if not h:
+        return None
+    path = os.path.join(h, f"{FAN_SETTING}_input")
+    return path if os.path.exists(path) else None
+
+
+TEMP_INPUT = find_temp_input()
+FAN_INPUT = find_fan_input()
+
+
+# ---------------------------------------------------------------------------
+# readings
+# ---------------------------------------------------------------------------
+
+def read_temp():
+    if not TEMP_INPUT:
+        return 0
+    try:
+        return max(0, min(255, round(int(_read(TEMP_INPUT)) / 1000)))
+    except (OSError, ValueError):
+        return 0
+
+
+def read_fan_rpm():
+    if not FAN_INPUT:
+        return 0
+    try:
+        return max(0, min(65535, int(_read(FAN_INPUT))))
+    except (OSError, ValueError):
+        return 0
+
+
+_prev_cpu = None
+
+
+def read_cpu_usage():
+    """Whole-system CPU utilisation from /proc/stat deltas."""
+    global _prev_cpu
+    try:
+        with open("/proc/stat") as f:
+            vals = [int(v) for v in f.readline().split()[1:]]
+    except (OSError, ValueError):
+        return 0
+    idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
+    total = sum(vals)
+    if _prev_cpu is None:
+        _prev_cpu = (idle, total)
+        return 0
+    d_idle, d_total = idle - _prev_cpu[0], total - _prev_cpu[1]
+    _prev_cpu = (idle, total)
+    if d_total <= 0:
+        return 0
+    return max(0, min(100, round(100 * (d_total - d_idle) / d_total)))
+
+
+def read_ram_usage():
+    info = {}
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                k, _, rest = line.partition(":")
+                info[k] = int(rest.split()[0])
+    except (OSError, ValueError, IndexError):
+        return 0
+    total, avail = info.get("MemTotal", 0), info.get("MemAvailable", 0)
+    if total <= 0:
+        return 0
+    return max(0, min(100, round(100 * (total - avail) / total)))
+
+
+# ---------------------------------------------------------------------------
+# framing
+# ---------------------------------------------------------------------------
+
+def build_frame(temp, cpu, rpm, ram):
+    return (HEADER
+            + bytes([(temp ^ XOR) & 0xFF, (cpu ^ XOR) & 0xFF])
+            + struct.pack(">H", (rpm ^ XOR) & 0xFFFF)
+            + bytes([(ram ^ XOR) & 0xFF]))
+
+
+def open_port():
+    for path in (PORT, FALLBACK_PORT):
+        if os.path.exists(path):
+            return serial.Serial(path, BAUD, timeout=0.5)
+    raise FileNotFoundError("no DH360D LCD serial port found")
+
+
+# ---------------------------------------------------------------------------
+
+def list_fans():
+    found = False
+    for h in sorted(glob.glob("/sys/class/hwmon/hwmon*")):
+        name = _hwmon_name(h)
+        for fi in sorted(glob.glob(os.path.join(h, "fan*_input"))):
+            try:
+                rpm = int(_read(fi))
+            except (OSError, ValueError):
+                continue
+            found = True
+            print(f"  {os.path.basename(fi)[:-6]:6s} {rpm:6d} rpm   ({name})  {fi}")
+    if not found:
+        print("  no fan inputs found.")
+        print("  On many boards the Super-I/O driver is not autoloaded; try:")
+        print("      sudo modprobe nct6775")
+        return
+    print()
+    print("  The pump is normally the fastest steady fan (2000-3500 rpm).")
+    print("  Set DH360D_FAN in /etc/default/dh360d to its name, e.g. DH360D_FAN=fan2")
+
+
+def main():
+    if "--list-fans" in sys.argv:
+        list_fans()
+        return
+    verbose = "-v" in sys.argv or "--verbose" in sys.argv
+    if verbose:
+        print(f"temp source: {TEMP_INPUT}", flush=True)
+        print(f"fan source : {FAN_INPUT or '(none - RPM will read 0)'}", flush=True)
+    read_cpu_usage()  # establish the first delta baseline
+
+    port = None
+    while True:
+        try:
+            if port is None:
+                port = open_port()
+                if verbose:
+                    print(f"connected: {port.port}", flush=True)
+            temp = read_temp()
+            cpu = read_cpu_usage()
+            ram = read_ram_usage()
+            rpm = read_fan_rpm()
+            port.write(build_frame(temp, cpu, rpm, ram))
+            port.flush()
+            if verbose:
+                print(f"temp={temp}C cpu={cpu}% ram={ram}% rpm={rpm}", flush=True)
+        except (serial.SerialException, OSError) as e:
+            if verbose:
+                print(f"error, will reconnect: {e}", flush=True)
+            if port is not None:
+                try:
+                    port.close()
+                except Exception:
+                    pass
+                port = None
+            time.sleep(3.0)
+            continue
+        time.sleep(INTERVAL)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass

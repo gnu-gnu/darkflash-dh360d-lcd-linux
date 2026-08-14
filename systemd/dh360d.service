@@ -1,0 +1,13 @@
+[Unit]
+Description=darkFlash DH360D AIO LCD feeder (temp/CPU/RAM/pump RPM)
+After=multi-user.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/dh360d
+ExecStart=/usr/local/bin/dh360d-daemon
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

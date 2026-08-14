@@ -1,0 +1,2 @@
+# darkFlash DH360D AIO LCD (WCH CDC-ACM) - stable device node + autostart.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1f3a", ATTRS{idProduct}=="0008", SYMLINK+="darkflash_lcd", TAG+="systemd", ENV{SYSTEMD_WANTS}="dh360d.service"

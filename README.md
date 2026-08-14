@@ -1,4 +1,4 @@
-# darkflash-dh360d-lcd
+# darkflash-dh360d-lcd-linux
 
 Linux daemon for the **darkFlash DH360D** AIO pump-head LCD.
 
@@ -31,8 +31,8 @@ needed — readings come straight from `/sys` and `/proc`).
 
 ```sh
 sudo apt install python3-serial      # Debian/Ubuntu
-git clone https://github.com/gnu-gnu/darkflash-dh360d-lcd
-cd darkflash-dh360d-lcd
+git clone https://github.com/gnu-gnu/darkflash-dh360d-lcd-linux
+cd darkflash-dh360d-lcd-linux
 sudo ./install.sh
 ```
 
@@ -147,13 +147,39 @@ compensation.
 
 ## Compatibility
 
-Verified on one machine: darkFlash DH360D, USB `1f3a:0008`, Linux 6.8,
-Ubuntu, ASUS WS X299 SAGE/10G.
+Everything here — the protocol, the `XOR 2` rule, the field order — was
+measured on exactly one machine. Treat it as one confirmed data point, not as
+a spec.
+
+### Test environment
+
+| | |
+|---|---|
+| Cooler | darkFlash DH360D |
+| LCD device | USB `1f3a:0008`, WCH CDC-ACM, `cdc_acm` driver |
+| Motherboard | ASUS WS X299 SAGE/10G (BIOS 4801) |
+| Super-I/O | Nuvoton NCT6796D (`nct6775` driver, manually loaded) |
+| CPU | Intel Core i9-10900X, 20 threads |
+| RAM | 128 GB |
+| OS | Ubuntu 24.04.4 LTS |
+| Kernel | 6.8.0-137-generic |
+| Python | 3.12.3 |
+| pyserial | 3.5 |
+| systemd | 255 |
+| Pump header | wired to **CPU_FAN**, reads as `nct6796/fan2` |
+
+Nothing here depends on a recent kernel or Python — the daemon uses only
+`/sys`, `/proc` and pyserial — so older distributions should be fine. The
+parts most likely to differ on your machine are which Super-I/O chip you have
+and which fan index the pump lands on.
+
+### Other models
 
 Other darkFlash coolers use entirely different hardware — the DN360D is a HID
 device (`5131:2007`), not serial — so this will not work there. If you have a
 different model that also enumerates as `1f3a:0008`, `tools/probe.py` will
-tell you quickly whether the layout matches. Reports welcome.
+tell you quickly whether the layout matches. Reports welcome, especially if
+the field order turns out to differ again.
 
 ## Related projects
 

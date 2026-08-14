@@ -1,9 +1,10 @@
 # DH360D LCD wire protocol
 
-Reverse engineered on 2026-08-14 against a darkFlash DH360D on Linux 6.8
-(ASUS WS X299 SAGE/10G). No vendor documentation was used — only observed
-behaviour. The device is write-only, so every conclusion here came from
-sending candidate frames and reading the numbers off the screen.
+Reverse engineered on 2026-08-14 against a darkFlash DH360D (full hardware
+and software details in the README's test environment table). No vendor
+documentation was used — only observed behaviour. The device is write-only,
+so every conclusion here came from sending candidate frames and reading the
+numbers off the screen by eye.
 
 ## Device
 

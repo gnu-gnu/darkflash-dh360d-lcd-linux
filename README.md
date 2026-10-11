@@ -183,7 +183,7 @@ the field order turns out to differ again.
 
 **WAVE DV360S MAX:** A user reported successful Linux operation on their particular darkFlash WAVE DV360S MAX unit in [issue #1](https://github.com/gnu-gnu/darkflash-dh360d-lcd-linux/issues/1). This is a separate implementation, not confirmation that this daemon supports the MAX. This project's confirmed DH360D unit uses USB `1f3a:0008`, CDC-ACM serial transport, and 7-byte status frames; the reported MAX unit uses USB `1800:3008`, HID transport with CRT/DRA framing, and a 480×480 display.
 
-The reporter credited this project's explanation of the host-side daemon approach, but used a different protocol for the MAX. They stated plans to publish their MAX-specific implementation, but no repository URL was provided in the issue. The report applies only to that particular MAX unit and does not establish compatibility with other units or darkFlash models.
+The reporter found this project's explanation of the host-side daemon approach helpful and shared a working Linux setup for their MAX unit. They also plan to publish their MAX-specific implementation. See the issue for details of the reported setup.
 
 ## Related projects
 
